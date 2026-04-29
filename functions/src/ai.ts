@@ -55,11 +55,15 @@ theo chuẩn AUN-QA / Bộ GD&ĐT Việt Nam. Mỗi đề cương gồm:
 Viết bằng tiếng Việt học thuật, súc tích. Trả về CHỈ JSON đúng schema,
 KHÔNG kèm chú thích, KHÔNG dùng code fence.`;
 
-function collectText(blocks: Array<{ type: string } & Record<string, unknown>>): string {
-  return blocks
-    .filter((b) => b.type === "text")
-    .map((b) => String((b as { text?: string }).text ?? ""))
-    .join("\n");
+function collectText(blocks: ReadonlyArray<{ type: string }>): string {
+  const out: string[] = [];
+  for (const b of blocks) {
+    const maybe = b as { type: string; text?: unknown };
+    if (maybe.type === "text" && typeof maybe.text === "string") {
+      out.push(maybe.text);
+    }
+  }
+  return out.join("\n");
 }
 
 export async function suggestCourses(
