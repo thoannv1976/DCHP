@@ -28,7 +28,7 @@ export default function SyllabusEditPage() {
       const snap = await getDoc(
         doc(db, "programs", programId, "syllabi", syllabusId)
       );
-      if (snap.exists()) setS({ id: snap.id, ...(snap.data() as Syllabus) });
+      if (snap.exists()) setS({ ...(snap.data() as Syllabus), id: snap.id });
     })();
   }, [programId, syllabusId]);
 

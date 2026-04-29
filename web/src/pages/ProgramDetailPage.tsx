@@ -30,7 +30,7 @@ export default function ProgramDetailPage() {
     (async () => {
       const snap = await getDoc(doc(db, "programs", programId));
       if (snap.exists())
-        setProgram({ id: snap.id, ...(snap.data() as Program) });
+        setProgram({ ...(snap.data() as Program), id: snap.id });
     })();
 
     const q = query(
@@ -38,7 +38,7 @@ export default function ProgramDetailPage() {
       orderBy("updatedAt", "desc")
     );
     return onSnapshot(q, (snap) => {
-      setSyllabi(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Syllabus) })));
+      setSyllabi(snap.docs.map((d) => ({ ...(d.data() as Syllabus), id: d.id })));
     });
   }, [programId]);
 

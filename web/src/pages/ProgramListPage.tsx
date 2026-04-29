@@ -25,7 +25,7 @@ export default function ProgramListPage() {
       orderBy("updatedAt", "desc")
     );
     return onSnapshot(q, (snap) => {
-      setPrograms(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Program) })));
+      setPrograms(snap.docs.map((d) => ({ ...(d.data() as Program), id: d.id })));
     });
   }, [user]);
 
