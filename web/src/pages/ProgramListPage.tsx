@@ -16,17 +16,30 @@ import { Program } from "../types";
 export default function ProgramListPage() {
   const { user } = useAuth();
   const [programs, setPrograms] = useState<Program[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user) return;
+    setLoading(true);
     const q = query(
       collection(db, "programs"),
       where("ownerUid", "==", user.uid),
       orderBy("updatedAt", "desc")
     );
-    return onSnapshot(q, (snap) => {
-      setPrograms(snap.docs.map((d) => ({ ...(d.data() as Program), id: d.id })));
-    });
+    return onSnapshot(
+      q,
+      (snap) => {
+        setPrograms(snap.docs.map((d) => ({ ...(d.data() as Program), id: d.id })));
+        setError(null);
+        setLoading(false);
+      },
+      (err) => {
+        console.error("programs snapshot error", err);
+        setError(err.message);
+        setLoading(false);
+      }
+    );
   }, [user]);
 
   const remove = async (id: string) => {
@@ -43,7 +56,21 @@ export default function ProgramListPage() {
         </Link>
       </div>
 
-      {programs.length === 0 ? (
+      {error && (
+        <div className="card border-red-300 bg-red-50 text-red-700 text-sm">
+          Lỗi tải danh sách: {error}
+          {error.includes("index") && (
+            <div className="mt-2 text-xs">
+              Cần tạo composite index cho Firestore. Mở Console → Firestore →
+              Indexes hoặc deploy bằng <code>firebase deploy --only firestore:indexes</code>.
+            </div>
+          )}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="card text-center text-slate-500">Đang tải...</div>
+      ) : programs.length === 0 && !error ? (
         <div className="card text-center text-slate-500">
           Chưa có chương trình nào. Hãy tạo chương trình đầu tiên để bắt đầu.
         </div>

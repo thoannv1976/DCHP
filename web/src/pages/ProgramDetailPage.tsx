@@ -37,9 +37,13 @@ export default function ProgramDetailPage() {
       collection(db, "programs", programId, "syllabi"),
       orderBy("updatedAt", "desc")
     );
-    return onSnapshot(q, (snap) => {
-      setSyllabi(snap.docs.map((d) => ({ ...(d.data() as Syllabus), id: d.id })));
-    });
+    return onSnapshot(
+      q,
+      (snap) => {
+        setSyllabi(snap.docs.map((d) => ({ ...(d.data() as Syllabus), id: d.id })));
+      },
+      (err) => console.error("syllabi snapshot error", err)
+    );
   }, [programId]);
 
   const requestSuggestions = async () => {
