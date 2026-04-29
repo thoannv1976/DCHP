@@ -9,6 +9,7 @@ import {
   Reference,
   Syllabus,
 } from "../types";
+import { exportSyllabusToDocx } from "../docxExport";
 
 function uid(prefix: string, list: { code?: string }[]): string {
   let n = list.length + 1;
@@ -21,6 +22,19 @@ export default function SyllabusEditPage() {
   const navigate = useNavigate();
   const [s, setS] = useState<Syllabus | null>(null);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const exportDocx = async () => {
+    if (!s) return;
+    setExporting(true);
+    try {
+      await exportSyllabusToDocx(s);
+    } catch (e) {
+      alert("Lỗi xuất DOCX: " + (e as Error).message);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   useEffect(() => {
     if (!programId || !syllabusId) return;
@@ -74,6 +88,9 @@ export default function SyllabusEditPage() {
         <div className="flex gap-2">
           <button className="btn-secondary" onClick={() => navigate(-1)}>
             Đóng
+          </button>
+          <button className="btn-secondary" disabled={exporting} onClick={exportDocx}>
+            {exporting ? "Đang xuất..." : "⬇ Xuất DOCX"}
           </button>
           <button className="btn-primary" disabled={saving} onClick={save}>
             {saving ? "Đang lưu..." : "Lưu đề cương"}
