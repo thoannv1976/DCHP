@@ -17,7 +17,10 @@ import { useAuth } from "../auth";
 import { CourseSuggestion, Program, Syllabus, SyllabusTemplate } from "../types";
 import { generateSyllabus, suggestCourses } from "../api";
 
-const TEMPLATE_ACCEPT = ".txt,.md,.json,text/plain,text/markdown,application/json";
+const TEMPLATE_ACCEPT =
+  ".txt,.md,.json,.pdf,.docx,text/plain,text/markdown,application/json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+const MAX_TEMPLATE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 export default function ProgramDetailPage() {
   const { programId } = useParams();
@@ -82,8 +85,8 @@ export default function ProgramDetailPage() {
     setUploading(true);
     try {
       for (const f of Array.from(files)) {
-        if (f.size > 1_500_000) {
-          alert(`File "${f.name}" lớn hơn 1.5MB — vui lòng cắt ngắn.`);
+        if (f.size > MAX_TEMPLATE_BYTES) {
+          alert(`File "${f.name}" lớn hơn 10MB — vui lòng nén/cắt ngắn.`);
           continue;
         }
         const docRef = await addDoc(
@@ -198,7 +201,7 @@ export default function ProgramDetailPage() {
             <h2 className="font-semibold">Mẫu đề cương ({templates.length})</h2>
             <p className="text-xs text-slate-500 mt-0.5">
               AI sẽ học theo cấu trúc, văn phong, mức chi tiết của mẫu được chọn.
-              Hỗ trợ .txt / .md / .json (≤ 1.5MB).
+              Hỗ trợ .pdf / .docx / .txt / .md / .json (≤ 10MB).
             </p>
           </div>
           <label className="btn-secondary cursor-pointer">

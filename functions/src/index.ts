@@ -26,6 +26,36 @@ async function loadProgram(uid: string, programId: string): Promise<Program> {
   return { ...data, id: snap.id };
 }
 
+async function extractTemplateText(
+  buf: Buffer,
+  filename: string,
+  contentType: string
+): Promise<string> {
+  const ext = (filename.split(".").pop() || "").toLowerCase();
+  const ct = (contentType || "").toLowerCase();
+
+  if (ext === "pdf" || ct === "application/pdf") {
+    const mod = (await import("pdf-parse/lib/pdf-parse.js")) as unknown as {
+      default: (data: Buffer) => Promise<{ text: string }>;
+    };
+    const pdfParse = mod.default ?? (mod as unknown as typeof mod.default);
+    const result = await pdfParse(buf);
+    return result.text || "";
+  }
+
+  if (
+    ext === "docx" ||
+    ct.includes("wordprocessingml") ||
+    ct === "application/msword"
+  ) {
+    const mammoth = await import("mammoth");
+    const result = await mammoth.extractRawText({ buffer: buf });
+    return result.value || "";
+  }
+
+  return buf.toString("utf-8");
+}
+
 async function loadTemplateContent(
   uid: string,
   programId: string,
@@ -43,7 +73,14 @@ async function loadTemplateContent(
 
   const bucket = admin.storage().bucket();
   const [buf] = await bucket.file(tpl.storagePath).download();
-  return buf.toString("utf-8");
+  const text = await extractTemplateText(buf, tpl.name, tpl.contentType);
+  if (!text.trim()) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Không trích xuất được nội dung từ mẫu đề cương"
+    );
+  }
+  return text;
 }
 
 function toHttpsError(e: unknown, label: string): HttpsError {
