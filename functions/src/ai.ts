@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
+import * as logger from "firebase-functions/logger";
 import { Program, CourseSuggestion, Syllabus } from "./types";
 
-const MODEL = "claude-opus-4-7";
+const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
 
 function client(): Anthropic {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -20,9 +21,18 @@ function extractJson<T>(text: string): T {
     start === -1 ? startArr : startArr === -1 ? start : Math.min(start, startArr);
   const last = Math.max(raw.lastIndexOf("}"), raw.lastIndexOf("]"));
   if (first === -1 || last === -1) {
-    throw new Error("AI response did not contain JSON");
+    logger.error("AI response had no JSON", { preview: text.slice(0, 500) });
+    throw new Error("AI không trả về JSON hợp lệ");
   }
-  return JSON.parse(raw.slice(first, last + 1)) as T;
+  try {
+    return JSON.parse(raw.slice(first, last + 1)) as T;
+  } catch (e) {
+    logger.error("JSON.parse failed", {
+      preview: raw.slice(first, Math.min(first + 800, last + 1)),
+      err: (e as Error).message,
+    });
+    throw new Error(`Không parse được JSON từ AI: ${(e as Error).message}`);
+  }
 }
 
 const SUGGEST_SYSTEM = `Bạn là chuyên gia thiết kế chương trình đào tạo đại học tại Việt Nam.
@@ -30,7 +40,7 @@ Nhiệm vụ: từ mô tả ngành và danh sách chuẩn đầu ra chương tr�
 một danh sách học phần (course) phù hợp giúp người học đạt được toàn bộ PLO.
 Ưu tiên các học phần có mã ngắn gọn, tên rõ ràng, số tín chỉ hợp lý (1–4 TC),
 và phải mapping học phần với các PLO mà nó hỗ trợ.
-Trả về JSON đúng schema, không kèm chú thích.`;
+Trả về CHỈ JSON đúng schema, KHÔNG kèm chú thích, KHÔNG dùng code fence.`;
 
 const SYLLABUS_SYSTEM = `Bạn là chuyên gia biên soạn đề cương học phần (syllabus)
 theo chuẩn AUN-QA / Bộ GD&ĐT Việt Nam. Mỗi đề cương gồm:
@@ -42,7 +52,15 @@ theo chuẩn AUN-QA / Bộ GD&ĐT Việt Nam. Mỗi đề cương gồm:
 - Phương pháp giảng dạy & học tập.
 - Phương pháp đánh giá: tỷ trọng tổng phải = 100%, mapping CLO.
 - Tài liệu tham khảo (chính, bổ sung).
-Viết bằng tiếng Việt học thuật, súc tích. Trả về JSON đúng schema, không kèm chú thích.`;
+Viết bằng tiếng Việt học thuật, súc tích. Trả về CHỈ JSON đúng schema,
+KHÔNG kèm chú thích, KHÔNG dùng code fence.`;
+
+function collectText(blocks: { type: string }[]): string {
+  return blocks
+    .filter((b) => b.type === "text")
+    .map((b) => (b as { text: string }).text)
+    .join("\n");
+}
 
 export async function suggestCourses(
   program: Program,
@@ -73,6 +91,7 @@ Hãy đề xuất khoảng ${count} học phần cốt lõi. Trả về JSON v�
   ]
 }`;
 
+  logger.info("suggestCourses calling Anthropic", { model: MODEL });
   const resp = await client().messages.create({
     model: MODEL,
     max_tokens: 4096,
@@ -80,13 +99,29 @@ Hãy đề xuất khoảng ${count} học phần cốt lõi. Trả về JSON v�
     messages: [{ role: "user", content: userPrompt }],
   });
 
-  const text = resp.content
-    .filter((b) => b.type === "text")
-    .map((b) => (b as { text: string }).text)
-    .join("\n");
+  const text = collectText(resp.content);
+  const parsed = extractJson<{ courses?: CourseSuggestion[] }>(text);
+  return parsed.courses ?? [];
+}
 
-  const parsed = extractJson<{ courses: CourseSuggestion[] }>(text);
-  return parsed.courses;
+function normalizeSyllabus(raw: Partial<Syllabus>, fallback: { code: string; name: string; credits?: number }): Syllabus {
+  return {
+    code: raw.code || fallback.code,
+    name: raw.name || fallback.name,
+    nameEn: raw.nameEn ?? "",
+    credits: typeof raw.credits === "number" ? raw.credits : fallback.credits ?? 3,
+    prerequisites: raw.prerequisites ?? "",
+    description: raw.description ?? "",
+    objectives: raw.objectives ?? "",
+    clos: Array.isArray(raw.clos) ? raw.clos : [],
+    cloPloMatrix: raw.cloPloMatrix ?? {},
+    chapters: Array.isArray(raw.chapters) ? raw.chapters : [],
+    teachingMethods: Array.isArray(raw.teachingMethods) ? raw.teachingMethods : [],
+    assessments: Array.isArray(raw.assessments) ? raw.assessments : [],
+    references: Array.isArray(raw.references) ? raw.references : [],
+    programId: "",
+    ownerUid: "",
+  };
 }
 
 export async function generateSyllabus(
@@ -139,6 +174,7 @@ Yêu cầu:
 - Mọi CLO phải được map tới ít nhất một PLO có sẵn.
 - Số giờ chương phải hợp lý so với số tín chỉ (1 TC ≈ 15 tiết LT).`;
 
+  logger.info("generateSyllabus calling Anthropic", { model: MODEL, course: course.code });
   const resp = await client().messages.create({
     model: MODEL,
     max_tokens: 8192,
@@ -146,10 +182,7 @@ Yêu cầu:
     messages: [{ role: "user", content: userPrompt }],
   });
 
-  const text = resp.content
-    .filter((b) => b.type === "text")
-    .map((b) => (b as { text: string }).text)
-    .join("\n");
-
-  return extractJson<Syllabus>(text);
+  const text = collectText(resp.content);
+  const parsed = extractJson<Partial<Syllabus>>(text);
+  return normalizeSyllabus(parsed, course);
 }
