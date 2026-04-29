@@ -17,16 +17,22 @@ export async function suggestCourses(
 export async function generateSyllabus(
   programId: string,
   course: { code: string; name: string; credits?: number },
-  save = true
+  options: { save?: boolean; templateId?: string } = {}
 ): Promise<{ id?: string; syllabus: Syllabus }> {
   const fn = httpsCallable<
     {
       programId: string;
       course: { code: string; name: string; credits?: number };
       save: boolean;
+      templateId?: string;
     },
     { id?: string; syllabus: Syllabus }
   >(functions, "generateSyllabusFn", { timeout: 540_000 });
-  const res = await fn({ programId, course, save });
+  const res = await fn({
+    programId,
+    course,
+    save: options.save ?? true,
+    templateId: options.templateId,
+  });
   return res.data;
 }

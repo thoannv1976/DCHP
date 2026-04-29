@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
+  addDoc,
   collection,
   deleteDoc,
   doc,
@@ -8,16 +9,25 @@ import {
   onSnapshot,
   orderBy,
   query,
+  updateDoc,
 } from "firebase/firestore";
-import { db } from "../firebase";
-import { CourseSuggestion, Program, Syllabus } from "../types";
+import { ref as sref, uploadBytes, deleteObject } from "firebase/storage";
+import { db, storage } from "../firebase";
+import { useAuth } from "../auth";
+import { CourseSuggestion, Program, Syllabus, SyllabusTemplate } from "../types";
 import { generateSyllabus, suggestCourses } from "../api";
+
+const TEMPLATE_ACCEPT = ".txt,.md,.json,text/plain,text/markdown,application/json";
 
 export default function ProgramDetailPage() {
   const { programId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [program, setProgram] = useState<Program | null>(null);
   const [syllabi, setSyllabi] = useState<Syllabus[]>([]);
+  const [templates, setTemplates] = useState<SyllabusTemplate[]>([]);
+  const [activeTemplateId, setActiveTemplateId] = useState<string>("");
+  const [uploading, setUploading] = useState(false);
   const [suggestions, setSuggestions] = useState<CourseSuggestion[]>([]);
   const [suggesting, setSuggesting] = useState(false);
   const [generating, setGenerating] = useState<string | null>(null);
@@ -33,18 +43,84 @@ export default function ProgramDetailPage() {
         setProgram({ ...(snap.data() as Program), id: snap.id });
     })();
 
-    const q = query(
-      collection(db, "programs", programId, "syllabi"),
-      orderBy("updatedAt", "desc")
-    );
-    return onSnapshot(
-      q,
+    const unsubSyllabi = onSnapshot(
+      query(
+        collection(db, "programs", programId, "syllabi"),
+        orderBy("updatedAt", "desc")
+      ),
       (snap) => {
         setSyllabi(snap.docs.map((d) => ({ ...(d.data() as Syllabus), id: d.id })));
       },
       (err) => console.error("syllabi snapshot error", err)
     );
+
+    const unsubTemplates = onSnapshot(
+      query(
+        collection(db, "programs", programId, "templates"),
+        orderBy("uploadedAt", "desc")
+      ),
+      (snap) => {
+        const list = snap.docs.map(
+          (d) => ({ ...(d.data() as SyllabusTemplate), id: d.id })
+        );
+        setTemplates(list);
+        setActiveTemplateId((cur) =>
+          cur && list.some((t) => t.id === cur) ? cur : list[0]?.id ?? ""
+        );
+      },
+      (err) => console.error("templates snapshot error", err)
+    );
+
+    return () => {
+      unsubSyllabi();
+      unsubTemplates();
+    };
   }, [programId]);
+
+  const uploadTemplate = async (files: FileList | null) => {
+    if (!files || !files.length || !programId || !user) return;
+    setUploading(true);
+    try {
+      for (const f of Array.from(files)) {
+        if (f.size > 1_500_000) {
+          alert(`File "${f.name}" lớn hơn 1.5MB — vui lòng cắt ngắn.`);
+          continue;
+        }
+        const docRef = await addDoc(
+          collection(db, "programs", programId, "templates"),
+          {
+            programId,
+            ownerUid: user.uid,
+            name: f.name,
+            storagePath: "",
+            contentType: f.type || "text/plain",
+            sizeBytes: f.size,
+            uploadedAt: Date.now(),
+          }
+        );
+        const path = `programs/${user.uid}/${programId}/templates/${docRef.id}-${f.name}`;
+        await uploadBytes(sref(storage, path), f);
+        await updateDoc(docRef, { storagePath: path });
+      }
+    } catch (e) {
+      alert("Lỗi upload: " + (e as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeTemplate = async (t: SyllabusTemplate) => {
+    if (!programId) return;
+    if (!confirm(`Xoá mẫu "${t.name}"?`)) return;
+    try {
+      if (t.storagePath) {
+        await deleteObject(sref(storage, t.storagePath)).catch(() => {});
+      }
+      await deleteDoc(doc(db, "programs", programId, "templates", t.id));
+    } catch (e) {
+      alert("Lỗi xoá: " + (e as Error).message);
+    }
+  };
 
   const requestSuggestions = async () => {
     if (!programId) return;
@@ -67,7 +143,10 @@ export default function ProgramDetailPage() {
     if (!programId) return;
     setGenerating(course.code);
     try {
-      const { id } = await generateSyllabus(programId, course, true);
+      const { id } = await generateSyllabus(programId, course, {
+        save: true,
+        templateId: activeTemplateId || undefined,
+      });
       if (id) navigate(`/programs/${programId}/syllabi/${id}`);
     } catch (e) {
       alert("Lỗi sinh đề cương: " + (e as Error).message);
@@ -111,6 +190,77 @@ export default function ProgramDetailPage() {
             </li>
           ))}
         </ul>
+      </div>
+
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold">Mẫu đề cương ({templates.length})</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              AI sẽ học theo cấu trúc, văn phong, mức chi tiết của mẫu được chọn.
+              Hỗ trợ .txt / .md / .json (≤ 1.5MB).
+            </p>
+          </div>
+          <label className="btn-secondary cursor-pointer">
+            <input
+              type="file"
+              multiple
+              accept={TEMPLATE_ACCEPT}
+              className="hidden"
+              disabled={uploading}
+              onChange={(e) => {
+                uploadTemplate(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            {uploading ? "Đang tải..." : "+ Tải mẫu"}
+          </label>
+        </div>
+
+        {templates.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            Chưa có mẫu nào. Tải lên một đề cương đã có để AI viết theo phong cách đó.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="active-template"
+                checked={activeTemplateId === ""}
+                onChange={() => setActiveTemplateId("")}
+              />
+              <span className="text-slate-600">
+                Không dùng mẫu — AI sinh theo phong cách mặc định
+              </span>
+            </label>
+            {templates.map((t) => (
+              <div
+                key={t.id}
+                className="flex items-center justify-between text-sm border border-slate-200 rounded-md px-3 py-2"
+              >
+                <label className="flex items-center gap-2 flex-1 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="active-template"
+                    checked={activeTemplateId === t.id}
+                    onChange={() => setActiveTemplateId(t.id)}
+                  />
+                  <span className="font-medium">{t.name}</span>
+                  <span className="text-xs text-slate-400">
+                    {(t.sizeBytes / 1024).toFixed(1)} KB
+                  </span>
+                </label>
+                <button
+                  className="btn-danger text-xs"
+                  onClick={() => removeTemplate(t)}
+                >
+                  Xoá
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="card space-y-4">
@@ -191,6 +341,14 @@ export default function ProgramDetailPage() {
               {generating === manualCode ? "Đang tạo..." : "Sinh đề cương"}
             </button>
           </div>
+          {activeTemplateId && (
+            <p className="text-xs text-slate-500 mt-2">
+              Sẽ dùng mẫu:{" "}
+              <span className="font-medium">
+                {templates.find((t) => t.id === activeTemplateId)?.name}
+              </span>
+            </p>
+          )}
         </div>
       </div>
 

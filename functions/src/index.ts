@@ -4,7 +4,7 @@ import { setGlobalOptions } from "firebase-functions/v2";
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
 import { suggestCourses, generateSyllabus } from "./ai";
-import { Program, Syllabus } from "./types";
+import { Program, Syllabus, SyllabusTemplate } from "./types";
 
 admin.initializeApp();
 setGlobalOptions({ region: "asia-southeast1", maxInstances: 10 });
@@ -24,6 +24,26 @@ async function loadProgram(uid: string, programId: string): Promise<Program> {
   const data = snap.data() as Program;
   if (data.ownerUid !== uid) throw new HttpsError("permission-denied", "Không có quyền");
   return { ...data, id: snap.id };
+}
+
+async function loadTemplateContent(
+  uid: string,
+  programId: string,
+  templateId: string
+): Promise<string> {
+  const snap = await db
+    .collection("programs")
+    .doc(programId)
+    .collection("templates")
+    .doc(templateId)
+    .get();
+  if (!snap.exists) throw new HttpsError("not-found", "Không tìm thấy mẫu đề cương");
+  const tpl = snap.data() as SyllabusTemplate;
+  if (tpl.ownerUid !== uid) throw new HttpsError("permission-denied", "Không có quyền");
+
+  const bucket = admin.storage().bucket();
+  const [buf] = await bucket.file(tpl.storagePath).download();
+  return buf.toString("utf-8");
 }
 
 function toHttpsError(e: unknown, label: string): HttpsError {
@@ -53,23 +73,28 @@ export const generateSyllabusFn = onCall(
   async (req) => {
     try {
       const uid = requireAuth(req.auth);
-      const { programId, course, save } = req.data as {
+      const { programId, course, save, templateId } = req.data as {
         programId: string;
         course: { code: string; name: string; credits?: number };
         save?: boolean;
+        templateId?: string;
       };
       if (!course?.code || !course?.name) {
         throw new HttpsError("invalid-argument", "Thiếu mã/tên học phần");
       }
 
       const program = await loadProgram(uid, programId);
-      const syllabus = await generateSyllabus(program, course);
+      const templateContent = templateId
+        ? await loadTemplateContent(uid, programId, templateId)
+        : undefined;
+      const syllabus = await generateSyllabus(program, course, templateContent);
 
       const now = Date.now();
       const enriched: Syllabus = {
         ...syllabus,
         programId,
         ownerUid: uid,
+        templateId: templateId ?? "",
         createdAt: now,
         updatedAt: now,
       };

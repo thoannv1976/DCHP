@@ -19,6 +19,13 @@ service cloud.firestore {
         allow write: if signedIn()
           && get(/databases/$(database)/documents/programs/$(programId)).data.ownerUid == request.auth.uid;
       }
+
+      match /templates/{templateId} {
+        allow read: if signedIn()
+          && get(/databases/$(database)/documents/programs/$(programId)).data.ownerUid == request.auth.uid;
+        allow write: if signedIn()
+          && get(/databases/$(database)/documents/programs/$(programId)).data.ownerUid == request.auth.uid;
+      }
     }
   }
 }

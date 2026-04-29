@@ -68,6 +68,18 @@ export interface Syllabus {
   teachingMethods: string[];
   assessments: AssessmentItem[];
   references: Reference[];
+  templateId?: string;
   createdAt?: number;
   updatedAt?: number;
+}
+
+export interface SyllabusTemplate {
+  id?: string;
+  programId: string;
+  ownerUid: string;
+  name: string;
+  storagePath: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedAt: number;
 }

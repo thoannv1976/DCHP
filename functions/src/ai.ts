@@ -130,11 +130,24 @@ function normalizeSyllabus(raw: Partial<Syllabus>, fallback: { code: string; nam
 
 export async function generateSyllabus(
   program: Program,
-  course: { code: string; name: string; credits?: number }
+  course: { code: string; name: string; credits?: number },
+  templateContent?: string
 ): Promise<Syllabus> {
   const ploLines = program.plos
     .map((p) => `- ${p.code}: ${p.description}`)
     .join("\n");
+
+  const templateBlock = templateContent
+    ? `
+
+ĐỀ CƯƠNG MẪU THAM KHẢO (giữ NGUYÊN văn phong, cấu trúc, mức độ chi tiết, cách
+diễn đạt mục tiêu/CLO/đánh giá; chỉ thay đổi nội dung cho phù hợp học phần mới.
+KHÔNG copy nguyên văn — viết lại theo môn ${course.name}):
+"""
+${templateContent.slice(0, 12000)}
+"""
+`
+    : "";
 
   const userPrompt = `Ngành: ${program.name}
 Mô tả ngành:
@@ -147,7 +160,7 @@ Học phần cần soạn đề cương:
 - Mã: ${course.code}
 - Tên: ${course.name}
 ${course.credits ? `- Số tín chỉ gợi ý: ${course.credits}` : ""}
-
+${templateBlock}
 Hãy sinh đề cương đầy đủ. Trả về JSON với schema:
 {
   "code": "string",
