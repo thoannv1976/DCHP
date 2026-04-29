@@ -9,7 +9,7 @@ export async function suggestCourses(
   const fn = httpsCallable<
     { programId: string; count: number },
     { courses: CourseSuggestion[] }
-  >(functions, "suggestCoursesFn");
+  >(functions, "suggestCoursesFn", { timeout: 180_000 });
   const res = await fn({ programId, count });
   return res.data.courses;
 }
@@ -26,7 +26,7 @@ export async function generateSyllabus(
       save: boolean;
     },
     { id?: string; syllabus: Syllabus }
-  >(functions, "generateSyllabusFn");
+  >(functions, "generateSyllabusFn", { timeout: 540_000 });
   const res = await fn({ programId, course, save });
   return res.data;
 }
