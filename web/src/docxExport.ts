@@ -21,11 +21,13 @@ const SIZE_H1 = 32; // 16pt
 const SIZE_H2 = 28; // 14pt
 const COLOR_HEADER = "1F3864";
 
+type Align = (typeof AlignmentType)[keyof typeof AlignmentType];
+
 function textRun(text: string, bold = false, size = SIZE_BODY): TextRun {
   return new TextRun({ text, bold, font: FONT, size });
 }
 
-function p(text: string, opts: { bold?: boolean; align?: AlignmentType } = {}): Paragraph {
+function p(text: string, opts: { bold?: boolean; align?: Align } = {}): Paragraph {
   return new Paragraph({
     alignment: opts.align,
     spacing: { after: 120 },
